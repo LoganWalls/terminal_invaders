@@ -29,10 +29,12 @@ class Controller(object):
             259: lambda: self.g.player.move((0, -1)),
             260: lambda: self.g.player.move((-1, 0)),
             261: lambda: self.g.player.move((1, 0)),
+            393: lambda: self.g.player.move((-3, 0)),
+            402: lambda: self.g.player.move((3, 0)),
             32: self.g.player.shoot,
             101: lambda: Enemy(
                 self.g,
-                x=self.g.width / 2 + 1,
+                x=int((self.g.width - 5) * random.random()),
                 y=self.g.height / 10
             ).spawn()
         }
@@ -137,7 +139,7 @@ class Game(object):
         self.controller = Controller(self)
 
         # Framerate
-        self.framerate_max = 60
+        self.framerate_max = 30
         self.last_tick = time.time()
 
     def reset_collision_arr(self):
@@ -221,7 +223,8 @@ class Actor(object):
         hp=3,
         speed=2,
         disp='/=\\',
-        orient=-1
+        orient=-1,
+        cooldown=0
     ):
         self.hp = hp
         self.x = x
@@ -229,10 +232,11 @@ class Actor(object):
         self.dx = dx
         self.dy = dy
         self.speed = speed
-        # self.disp = ord(disp)
         self.disp = disp
         self.g = g
         self.orient = orient
+        self.cooldown = cooldown
+        self.last_shot = 0
 
     def __getitem__(self, item):
         return self.__getattribute__(item)
@@ -359,16 +363,19 @@ class Actor(object):
         r_type = type(recipient)
 
     def shoot(self):
-        power = 1
-        velocity = 1 * self.orient  # Up is negative.
-        x, y = self.get_center()
+        t = time.time()
+        if t - self.last_shot > self.cooldown:
+            self.last_shot = t
+            power = 1
+            velocity = 1 * self.orient  # Up is negative.
+            x, y = self.get_center()
 
-        # Make it spawn above the actor if possible
-        y += self.orient
-        y = max([y, 0])
-        y = min([y, self.g.height - 1])
+            # Make it spawn above the actor if possible
+            y += self.orient
+            y = max([y, 0])
+            y = min([y, self.g.height - 1])
 
-        Projectile(self.g, x=x, y=y, dy=velocity).spawn(damage=power)
+            Projectile(self.g, x=x, y=y, dy=velocity).spawn(damage=power)
 
     def add_hp(self, amount):
         self.hp += amount
@@ -396,6 +403,7 @@ class Projectile(Actor):
 
     def spawn(self, damage=1, disp='|'):
         self.damage = damage
+        self.speed = 1
         self.disp = disp
         self.g.projectiles.append(self)
         self.update_position([self.x, self.y])
@@ -434,7 +442,11 @@ class Player(Actor):
 
 class Enemy(Actor):
 
-    def spawn(self, damage=1, disp='<->'):
+    def spawn(self, damage=1, disp='<-->'):
+        self.hp = 3
+        self.orient = 1
+        self.speed = 1
+        self.cooldown = 2
         self.damage = damage
         self.disp = disp
         self.g.enemies.append(self)
@@ -446,6 +458,9 @@ class Enemy(Actor):
 
     def on_tick(self):
         self.stumble()
+        r = random.random()
+        if r > 0.1:
+            self.shoot()
         self.move((self.dx, self.dy))
 
     def stumble(self):
@@ -457,14 +472,14 @@ class Enemy(Actor):
         else:
             self.dx -= 0.1
 
-        if stumble_y > 0.5:
-            self.dy += 0.1
+        if stumble_y > 0.65:
+            self.dy += 0.3
         else:
-            self.dy -= 0.1
+            self.dy = 0.0
 
         # Cap the values
-        self.dx = max([self.dx, -2])
-        self.dx = min([self.dx, 2])
+        self.dx = max([self.dx, -1])
+        self.dx = min([self.dx, 1])
 
         self.dy = max([self.dy, -1])
         self.dy = min([self.dy, 1])
@@ -496,7 +511,6 @@ class Enemy(Actor):
         elif r_type == Projectile:
             self.add_hp(-1 * recipient.damage)
             recipient.destroy()
-
 
 class VFX(object):
 
