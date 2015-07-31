@@ -5,17 +5,20 @@ import random
 
 class Controller(object):
 
-    def __init__(self, g, input_terminal):
+    def __init__(self, g):
         # A reference to the parent game object.
         self.g = g
 
+        num_pads = 2
+        self.k_pads = []
         # A terminal to read the input
-        self.terminal = input_terminal
-
-        # Read key inputs.
-        self.terminal.keypad(1)
-        # Make getch non-blocking
-        self.terminal.nodelay(1)
+        for i in range(num_pads):
+            k = curses.newpad(1, 1)
+            # Read key inputs.
+            k.keypad(1)
+            # Make getch non-blocking
+            k.nodelay(1)
+            self.k_pads.append(k)
 
         self.__set_default_keybinds__()
 
@@ -35,15 +38,20 @@ class Controller(object):
         }
 
     def handle_input(self):
-        input_value = self.terminal.getch()
-        if input_value != -1:
+        input_values = []
+        for k in self.k_pads:
+            val = k.getch()
+            if val != -1:
+                input_values.append(val)
+
+        for v in input_values:
             try:
-                self.keybinds[input_value]()
+                self.keybinds[v]()
             except:
                 self.g.renderer.screen.addstr(
                     self.g.height / 2,
                     self.g.width / 2,
-                    str(input_value)
+                    str(v)
                 )
 
 
@@ -95,17 +103,25 @@ class Renderer(object):
     def p(self, val):
         self.screen.addstr(self.height - 1, 1, str(val))
 
+    def print_center(self, message):
+        self.buffering = True
+        message = str(message)
+        self.screen.addstr(
+            self.height / 2, self.width / 2 - len(message), message)
+
 
 class Game(object):
 
-    def __init__(self, width, height):
+    def __init__(self):
 
         # State
         self.state = 'init'
         self.valid_states = ['init', 'play', 'pause', 'gameover', 'quit']
 
         # Rendering
-        self.renderer = Renderer(curses.initscr(), width, height)
+        scr = curses.initscr()
+        height, width = scr.getmaxyx()
+        self.renderer = Renderer(scr, width, height)
         self.width = width
         self.height = height
 
@@ -118,14 +134,11 @@ class Game(object):
             [None for i in range(self.height)] for j in range(self.width)]
 
         # Controls / Input
-        self.controller = Controller(self, curses.newwin(1, 1))
+        self.controller = Controller(self)
 
         # Framerate
-        self.framerate_max = 30
+        self.framerate_max = 60
         self.last_tick = time.time()
-
-        # Collision Detection
-        self.collisions = []
 
     def reset_collision_arr(self):
         self.actor_pos = [
@@ -171,17 +184,10 @@ class Game(object):
             self.last_tick = cur_time
             # Tick logic
             self.__tick__()
-            self.handle_collisions()
             # Update the screen
             self.draw_all()
             # Render to the screen
             self.renderer.render()
-
-    def handle_collisions(self):
-        while len(self.collisions):
-            colliders = self.collisions.pop()
-            instigator, recipient = colliders
-            instigator.collide(recipient)
 
     def play(self):
         self.set_state('play')
@@ -190,6 +196,13 @@ class Game(object):
             self.controller.handle_input()
             self.tick()
 
+        self.quit()
+
+    def gameover(self):
+        self.set_state('gameover')
+        self.renderer.print_center('GAMEOVER')
+        self.renderer.render()
+        time.sleep(5)
         self.quit()
 
     def quit(self):
@@ -293,7 +306,7 @@ class Actor(object):
     def screen_check(self, target):
         if target[0] < 0:
             direction = 'left'
-        elif target[0] > self.g.width - len(self.disp):
+        elif target[0] > self.g.width - len(self.disp) - 1:
             direction = 'right'
         elif target[1] < 0:
             direction = 'top'
@@ -342,8 +355,8 @@ class Actor(object):
 
         return (x, y)
 
-    def collide(self, instigator):
-        i_type = type(instigator)
+    def collide(self, recipient):
+        r_type = type(recipient)
 
     def shoot(self):
         power = 1
@@ -365,7 +378,8 @@ class Actor(object):
             self.destroy()
 
     def destroy(self):
-        self.g.collision_arr[self.x][self.y] = None
+        for i in range(len(self.disp)):
+            self.g.collision_arr[self.x + i][self.y] = None
         self.on_destroy()
 
     def on_tick(self):
@@ -411,8 +425,11 @@ class Projectile(Actor):
 
 class Player(Actor):
 
-    def foo(self):
-        pass
+    def on_tick(self):
+        self.move((self.dx, self.dy))
+
+    def on_destroy(self):
+        self.g.gameover()
 
 
 class Enemy(Actor):
@@ -446,8 +463,8 @@ class Enemy(Actor):
             self.dy -= 0.1
 
         # Cap the values
-        self.dx = max([self.dx, -3])
-        self.dx = min([self.dx, 3])
+        self.dx = max([self.dx, -2])
+        self.dx = min([self.dx, 2])
 
         self.dy = max([self.dy, -1])
         self.dy = min([self.dy, 1])
@@ -461,9 +478,24 @@ class Enemy(Actor):
         if direction == 'left' or direction == 'right':
             self.dx *= -0.8
         elif direction == 'top' or direction == 'bottom':
-            self.dy *= -0.1
+            self.dy *= -0.2
 
         self.update_position([x, y])
+
+    def collide(self, recipient):
+        r_type = type(recipient)
+        # write_log('COLLISION: '+str(r_type))
+
+        if r_type == Player:
+            recipient.add_hp(-1 * self.damage)
+
+        elif r_type == Enemy:
+            self.dx *= -1
+            self.dy *= -1
+
+        elif r_type == Projectile:
+            self.add_hp(-1 * recipient.damage)
+            recipient.destroy()
 
 
 class VFX(object):
@@ -482,7 +514,7 @@ def main():
     # with open('log.txt', 'wb') as f:
     #     f.write('')
 
-    g = Game(100, 24)
+    g = Game()
     g.play()
 
 
