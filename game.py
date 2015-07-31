@@ -29,8 +29,8 @@ class Controller(object):
             32: self.g.player.shoot,
             101: lambda: Enemy(
                 self.g,
-                x=self.g.width / 2,
-                y=self.g.height / 10 - 1
+                x=self.g.width / 2 + 1,
+                y=self.g.height / 10
             ).spawn()
         }
 
@@ -168,7 +168,6 @@ class Game(object):
 
         # Only tick if we're under the framerate limit.
         if lag > 1. / self.framerate_max:
-            # self.reset_collision_arr()
             self.last_tick = cur_time
             # Tick logic
             self.__tick__()
@@ -177,7 +176,6 @@ class Game(object):
             self.draw_all()
             # Render to the screen
             self.renderer.render()
-            #self.renderer.p(self.collision_arr[self.width/2][self.height/10])
 
     def handle_collisions(self):
         while len(self.collisions):
@@ -246,24 +244,37 @@ class Actor(object):
                 target[i] = self[axis] + magnitude 
 
             screen_col = self.screen_check(target)
-            if screen_col:
+            if screen_col != None:
                 self.on_screen_collide(screen_col)
             else:
-                # Check for collisions.
-                collided = self.collision_check(target)
-                if collided:
-                    self.collide(collided) # Handle the collison.
-                else:
+                collided = False
+                # Check for collisions along the entire sprite.
+                for i in range(len(self.disp)):
+                    collider = self.collision_check([target[0] + i, target[1]])
+                    if collider:
+                        collided = True
+                        # Handle the collison.
+                        self.collide(collider)
+
+                # If we didn't collide, update our position.
+                if not collided:
                     self.update_position(target)
                     self.on_move()
 
     def update_position(self, target):
+
+        disp_len = len(self.disp)
+
         # Clear previous position.
-        self.g.collision_arr[self.x][self.y] = None
+        for i in range(disp_len):
+            self.g.collision_arr[self.x + i][self.y] = None
+
         # Change position.
         self.x, self.y = target
+
         # Update collision array.
-        self.g.collision_arr[self.x][self.y] = self
+        for i in range(disp_len):
+            self.g.collision_arr[self.x + i][self.y] = self
 
     def on_screen_collide(self, direction):
         pass
@@ -288,7 +299,6 @@ class Actor(object):
         # Check the position we're moving into
         tx, ty = target
         new_pos = self.g.collision_arr[tx][ty]
-
         if new_pos != None and new_pos != self:
             return new_pos
         else:
@@ -326,10 +336,11 @@ class Actor(object):
         Projectile(self.g, x=x, y=y, dy=velocity).spawn(damage=power)
 
     def add_hp(self, amount):
-        self.destroy()
-        # self.hp += amount
-        # if self.hp <= 0:
-        #     self.destroy()
+         self.hp += amount
+         
+         #Die if no HP left.
+         if self.hp <= 0:
+             self.destroy()
 
     def destroy(self):
         self.g.collision_arr[self.x][self.y] = None
@@ -351,20 +362,19 @@ class Projectile(Actor):
         self.damage = damage
         self.disp = disp
         self.g.projectiles.append(self)
-        self.g.collision_arr[self.x][self.y] = self
+        self.update_position([self.x, self.y])
 
     def on_screen_collide(self, direction):
         self.destroy()
 
     def collide(self, recipient):
         r_type = type(recipient)
+        #write_log('COLLISION: '+str(r_type))
 
         if r_type == Player or r_type == Enemy:
-            self.g.renderer.p('ENEMY')
             recipient.add_hp(-1 * self.damage)
 
         elif r_type == Projectile:
-            self.g.renderer.p('PROJECTILE')
             recipient.destroy()
 
         self.destroy()
@@ -375,8 +385,6 @@ class Projectile(Actor):
 
     def on_move(self):
         pass
-        #self.g.renderer.p(self.y == self.g.height/10)
-        #write_log(self.g.collision_arr)
 
 
 class Player(Actor):
@@ -388,17 +396,14 @@ class Player(Actor):
         y = max([y, 0])
         self.update_position([x,y])
 
+
 class Enemy(Actor):
 
-    def spawn(self, damage=1, disp='<-->'):
+    def spawn(self, damage=1, disp='<->'):
         self.damage = damage
         self.disp = disp
         self.g.enemies.append(self)
-        self.g.collision_arr[self.x][self.y] = self
-
-
-    def ai(self):
-        pass
+        self.update_position([self.x, self.y])
 
     def on_destroy(self):
         if self in self.g.enemies:
@@ -418,11 +423,20 @@ class VFX(object):
 
 
 def main():
+    #with open('log.txt', 'wb') as f:
+    #    f.write('')
+    
     g = Game(100, 24)
     g.play()
 
+
 def write_log(message):
     with open('log.txt', 'ab') as f:
-        f.write(str(message)+'\n\n'+('='*100)+'\n\n')
+        f.write(str(message)+'\n\n')
 
 main()
+
+
+
+
+######It's an even odd thing. Make collision handle the sprite width.

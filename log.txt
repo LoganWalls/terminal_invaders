@@ -1,0 +1,6 @@
+COLLISION: <class '__main__.Enemy'>
+
+COLLISION: <class '__main__.Enemy'>
+
+COLLISION: <class '__main__.Enemy'>
+
