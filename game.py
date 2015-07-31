@@ -1,6 +1,6 @@
 import time
 import curses
-from copy import deepcopy
+import random
 
 
 class Controller(object):
@@ -129,7 +129,7 @@ class Game(object):
 
     def reset_collision_arr(self):
         self.actor_pos = [
-            [None for i in range(self.height+1)] for j in range(self.width+1)]
+            [None for i in range(self.height + 1)] for j in range(self.width + 1)]
 
     def set_state(self, new_state):
         if new_state in self.valid_states:
@@ -228,38 +228,44 @@ class Actor(object):
         self.__setattr__(key, value)
 
     # magnitudes is a tuple of magnitudes (x, y)
+    def __move__(self, target):
+
+        screen_col = self.screen_check(target)
+
+        if screen_col is not None:
+            self.on_screen_collide(screen_col)
+        else:
+            collided = self.collision_check(target)
+
+            # If we didn't collide, update our position.
+            if not collided:
+                self.update_position(target)
+                self.on_move()
+
     def move(self, magnitudes):
+        x, y = magnitudes
+        x = int(x * self.speed)
+        y = int(y * self.speed)
 
-        if magnitudes[0] != 0 or magnitudes[1] != 0:
-
-            # Where are we trying to move to?
-            target = [self.x, self.y]
-
-            for i, m in enumerate(magnitudes):
-                magnitude = int(m * self.speed)
-                if i == 0:
-                    axis = 'x'
-                elif i == 1:
-                    axis = 'y'
-                target[i] = self[axis] + magnitude 
-
-            screen_col = self.screen_check(target)
-            if screen_col != None:
-                self.on_screen_collide(screen_col)
+        # Move while either direction has distance left.
+        while x != 0 or y != 0:
+            if x < 0:
+                x_dir = -1
+            elif x > 0:
+                x_dir = 1
             else:
-                collided = False
-                # Check for collisions along the entire sprite.
-                for i in range(len(self.disp)):
-                    collider = self.collision_check([target[0] + i, target[1]])
-                    if collider:
-                        collided = True
-                        # Handle the collison.
-                        self.collide(collider)
+                x_dir = 0
 
-                # If we didn't collide, update our position.
-                if not collided:
-                    self.update_position(target)
-                    self.on_move()
+            if y < 0:
+                y_dir = - 1
+            elif y > 0:
+                y_dir = 1
+            else:
+                y_dir = 0
+
+            x -= x_dir
+            y -= y_dir
+            self.__move__([self.x + x_dir,  self.y + y_dir])
 
     def update_position(self, target):
 
@@ -277,7 +283,11 @@ class Actor(object):
             self.g.collision_arr[self.x + i][self.y] = self
 
     def on_screen_collide(self, direction):
-        pass
+        x = min([self.x, self.g.width - len(self.disp)])
+        x = max([x, 0])
+        y = min([self.y, self.g.height - 1])
+        y = max([y, 0])
+        self.update_position([x, y])
 
     # Check to see if we are going out of bounds.
     def screen_check(self, target):
@@ -294,8 +304,7 @@ class Actor(object):
 
         return direction
 
-    # Check and handle collisions
-    def collision_check(self, target):
+    def __collision_check__(self, target):
         # Check the position we're moving into
         tx, ty = target
         new_pos = self.g.collision_arr[tx][ty]
@@ -303,6 +312,19 @@ class Actor(object):
             return new_pos
         else:
             return None
+
+    # Check and handle collisions
+    def collision_check(self, target):
+        collided = False
+        # Check for collisions along the entire sprite.
+        for i in range(len(self.disp)):
+            collider = self.__collision_check__([target[0] + i, target[1]])
+            if collider:
+                collided = True
+                # Handle the collison.
+                self.collide(collider)
+
+        return collided
 
     # Magnitudes is a tuple of magnitudes (x, y)
     def apply_force(self, magnitudes):
@@ -336,11 +358,11 @@ class Actor(object):
         Projectile(self.g, x=x, y=y, dy=velocity).spawn(damage=power)
 
     def add_hp(self, amount):
-         self.hp += amount
-         
-         #Die if no HP left.
-         if self.hp <= 0:
-             self.destroy()
+        self.hp += amount
+
+        # Die if no HP left.
+        if self.hp <= 0:
+            self.destroy()
 
     def destroy(self):
         self.g.collision_arr[self.x][self.y] = None
@@ -369,7 +391,7 @@ class Projectile(Actor):
 
     def collide(self, recipient):
         r_type = type(recipient)
-        #write_log('COLLISION: '+str(r_type))
+        # write_log('COLLISION: '+str(r_type))
 
         if r_type == Player or r_type == Enemy:
             recipient.add_hp(-1 * self.damage)
@@ -389,12 +411,8 @@ class Projectile(Actor):
 
 class Player(Actor):
 
-    def on_screen_collide(self, direction):
-        x = min([self.x, self.g.width - len(self.disp)])
-        x = max([x, 0])
-        y = min([self.y, self.g.height - 1])
-        y = max([y, 0])
-        self.update_position([x,y])
+    def foo(self):
+        pass
 
 
 class Enemy(Actor):
@@ -408,6 +426,44 @@ class Enemy(Actor):
     def on_destroy(self):
         if self in self.g.enemies:
             self.g.enemies.remove(self)
+
+    def on_tick(self):
+        self.stumble()
+        self.move((self.dx, self.dy))
+
+    def stumble(self):
+        stumble_x = random.random()
+        stumble_y = random.random()
+
+        if stumble_x > 0.5:
+            self.dx += 0.1
+        else:
+            self.dx -= 0.1
+
+        if stumble_y > 0.5:
+            self.dy += 0.1
+        else:
+            self.dy -= 0.1
+
+        # Cap the values
+        self.dx = max([self.dx, -3])
+        self.dx = min([self.dx, 3])
+
+        self.dy = max([self.dy, -1])
+        self.dy = min([self.dy, 1])
+
+    def on_screen_collide(self, direction):
+        x = min([self.x, self.g.width - len(self.disp)])
+        x = max([x, 0])
+        y = min([self.y, self.g.height - 1])
+        y = max([y, 0])
+
+        if direction == 'left' or direction == 'right':
+            self.dx *= -0.8
+        elif direction == 'top' or direction == 'bottom':
+            self.dy *= -0.1
+
+        self.update_position([x, y])
 
 
 class VFX(object):
@@ -423,20 +479,18 @@ class VFX(object):
 
 
 def main():
-    #with open('log.txt', 'wb') as f:
-    #    f.write('')
-    
+    # with open('log.txt', 'wb') as f:
+    #     f.write('')
+
     g = Game(100, 24)
     g.play()
 
 
 def write_log(message):
     with open('log.txt', 'ab') as f:
-        f.write(str(message)+'\n\n')
+        f.write(str(message) + '\n\n')
 
 main()
 
 
-
-
-######It's an even odd thing. Make collision handle the sprite width.
+# It's an even odd thing. Make collision handle the sprite width.
