@@ -3,6 +3,7 @@ A little hobby project, trying to recreate a Space-Invaders style game using onl
 
 ##Controls:
 * Move using the arrow keys
+* Hold the left SHIFT to move faster
 * SPACE to shoot
 * E to spawn new enemies
 * ESC to Exit
